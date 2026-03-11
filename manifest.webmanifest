@@ -1,0 +1,19 @@
+{
+  "name": "Wellness Tracker Offline",
+  "short_name": "Wellness",
+  "description": "Offline Wellness Check-ins lokal auf deinem Handy",
+  "lang": "de",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

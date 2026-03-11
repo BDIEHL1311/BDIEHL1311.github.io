@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <title>Wellness Tracker Offline</title>
+  <style>
+    :root{--bg:#0b1020;--card:#141b31;--text:#e9eefc;--muted:#a5b0cf;--ok:#22c55e;--warn:#facc15;--bad:#ef4444;--line:#26314f}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+    .app{max-width:720px;margin:auto;padding:14px 14px 90px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+    h1,h2,h3{margin:.2rem 0} .muted{color:var(--muted);font-size:.9rem}
+    input,textarea,select,button{font:inherit} input,textarea,select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0d1429;color:var(--text)}
+    .row{display:grid;gap:8px}.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    button{border:0;border-radius:10px;padding:10px 12px;background:#2563eb;color:white;font-weight:600}
+    button.alt{background:#334155} button.good{background:#16a34a} button.warn{background:#d97706} button.bad{background:#b91c1c}
+    .tabs{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,1fr);background:#0b1123;border-top:1px solid var(--line)}
+    .tabs button{border-radius:0;background:transparent;color:var(--muted);padding:12px 8px}.tabs button.active{color:#60a5fa}
+    .q{font-weight:650;margin:4px 0 8px} .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:.8rem}
+    .p-ok{background:#153e2b;color:#8ef0b5}.p-w{background:#463500;color:#ffe49a}.p-b{background:#4a1d1d;color:#ffb0b0}
+    canvas{width:100%;height:160px;background:#0d1429;border-radius:10px;border:1px solid var(--line)}
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="card"><h1>Wellness Tracker (Offline)</h1><div class="muted">Läuft komplett lokal im Browser deines Handys. Kein Server, kein Konto.</div></div>
+  <div id="view"></div>
+</div>
+<div class="tabs">
+  <button data-tab="checkin" class="active">Check-in</button>
+  <button data-tab="verlauf">Verlauf</button>
+  <button data-tab="dashboard">Dashboard</button>
+  <button data-tab="einstellungen">Tools</button>
+</div>
+<script>
+const KEY='wellness_offline_v1';
+let deferredInstallPrompt = null;
+const state=JSON.parse(localStorage.getItem(KEY)||'{"entries":[],"pin":""}');
+let tab='checkin', mode='morgen', step=0, form={date:new Date().toISOString().slice(0,10)};
+const qs={morgen:[['sleepScore','Schlaf (1-10)','number'],['sleepText','Schlaf Notiz','text'],['driveScore','Antrieb (1-10)','number'],['moodScore','Stimmung (1-10)','number'],['wakeupEase','Aufstehen (1-10)','number'],['bodyComplaints','Körperliche Beschwerden? ja/nein','bool'],['bodyText','Körper-Notiz','text']],abend:[['dayScore','Tag insgesamt (1-10)','number'],['sportDone','Sport gemacht? ja/nein','bool'],['movementDone','Bewegung gemacht? ja/nein','bool'],['reflectionDone','Gebet/Reflexion? ja/nein','bool'],['socialContact','Sozialer Kontakt? ja/nein','bool'],['studyDone','Studium gemacht? ja/nein','bool'],['studyHours','Studium Stunden','number'],['workScore','Arbeit (1-10, leer=kein Arbeitstag)','number'],['eatingScore','Essen (1-10)','number'],['eatingBinge','Binge-Eating heute? ja/nein','bool'],['screentimeUncontrolled','Screentime unkontrolliert? ja/nein','bool'],['dayWin','Tagesgewinn','text']]};
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const $=s=>document.querySelector(s);
+function val(v,t){ if(t==='bool') return /^(ja|true|1)$/i.test(String(v)); if(t==='number') return v===''?null:Number(v); return v; }
+function alarmEval(){
+  const byDate={}; state.entries.forEach(e=>{byDate[e.date]=byDate[e.date]||{}; byDate[e.date][e.sessionType]=e.payload;});
+  const dates=Object.keys(byDate).sort().reverse();
+  const dayVal=(i,field)=> (byDate[dates[i]]?.abend?.[field] ?? byDate[dates[i]]?.morgen?.[field] ?? null);
+  const streak=(check,max=10)=>{let c=0; for(let i=0;i<Math.min(max,dates.length);i++){ if(check(i)) c++; else break;} return c;};
+  const rules=[
+    ['Essen', streak(i=>dayVal(i,'eatingBinge')===true),2,3],
+    ['Screentime', streak(i=>dayVal(i,'screentimeUncontrolled')===true),2,4],
+    ['Sport', streak(i=>dayVal(i,'sportDone')===false),3,5],
+    ['Bewegung', streak(i=>dayVal(i,'movementDone')===false),4,6],
+    ['Schlaf', streak(i=>typeof dayVal(i,'sleepScore')==='number' && dayVal(i,'sleepScore')<=4),4,6],
+    ['Sozialkontakt', streak(i=>dayVal(i,'socialContact')===false),5,7],
+    ['Studium', streak(i=>dayVal(i,'studyDone')===false),3,5],
+    ['Reflexion', streak(i=>dayVal(i,'reflectionDone')===false),3,5],
+    ['Stimmung', streak(i=>typeof dayVal(i,'moodScore')==='number' && dayVal(i,'moodScore')<=4),3,5],
+    ['Antrieb', streak(i=>typeof dayVal(i,'driveScore')==='number' && dayVal(i,'driveScore')<=3),3,5],
+  ];
+  const out=[]; let watch=0;
+  rules.forEach(([label,s,y,r])=>{ if(s>=2)watch++; if(s>=r) out.push({level:'rot',msg:`${label}: klares Muster (${s} Tage).`}); else if(s>=y) out.push({level:'gelb',msg:`${label}: Muster im Entstehen (${s} Tage).`});});
+  if(watch>=3) out.push({level:'rot',msg:'Kombinationsalarm: mehrere Marker gleichzeitig auffällig.'});
+  return out;
+}
+function interventions(level){
+  const base=['10 Minuten Spaziergang, jetzt. Schuhe an, Tür auf.','Trink ein Glas Wasser und iss etwas Einfaches mit Eiweiß.','Schick einer Person eine kurze Nachricht: "Kurzes Check-in von mir".'];
+  return level==='rot'?base.concat(['Heute Abend 30 Minuten vor Schlaf kein Bildschirm.']):base;
+}
+function renderCheckin(){
+  const q=qs[mode][step]; const [key,label,type]=q; const v=form[key]??'';
+  $('#view').innerHTML=`<div class='card'><div class='row2'><button class='${mode==='morgen'?'good':'alt'}' id='m'>Morgen</button><button class='${mode==='abend'?'good':'alt'}' id='a'>Abend</button></div><p class='muted'>Karte ${step+1}/${qs[mode].length}</p><div class='q'>${label}</div>${type==='text'?`<textarea id='inp' rows='3'>${v||''}</textarea>`:`<input id='inp' ${type==='number'?'type="number" min="1" max="10"':'type="text" placeholder="ja/nein"'} value='${v===null?'':v}' />`}<div class='row2' style='margin-top:10px'><button class='alt' id='prev'>Zurück</button><button id='next'>${step<qs[mode].length-1?'Weiter':'Speichern'}</button></div></div>`;
+  $('#m').onclick=()=>{mode='morgen';step=0;form={date:new Date().toISOString().slice(0,10)};render()};
+  $('#a').onclick=()=>{mode='abend';step=0;form={date:new Date().toISOString().slice(0,10)};render()};
+  $('#prev').onclick=()=>{form[key]=val($('#inp').value,type); if(step>0)step--; render()};
+  $('#next').onclick=()=>{form[key]=val($('#inp').value,type); if(step<qs[mode].length-1){step++;render();return;}
+    state.entries.push({id:crypto.randomUUID(),date:form.date,sessionType:mode,createdAt:new Date().toISOString(),payload:{...form}}); save();
+    const alarms=alarmEval();
+    const alarmHtml=alarms.map(a=>`<div class='card'><span class='pill ${a.level==='rot'?'p-b':'p-w'}'>${a.level==='rot'?'🔴 Rot':'🟡 Gelb'}</span><p>${a.msg}</p><ul>${interventions(a.level).slice(0,3).map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
+    form={date:new Date().toISOString().slice(0,10)}; step=0;
+    $('#view').innerHTML=`<div class='card'><h3>Gespeichert ✅</h3><p class='muted'>Eintrag lokal gespeichert.</p></div>${alarmHtml||"<div class='card'>Kein Alarm aktiv.</div>"}`;
+  }
+}
+function renderVerlauf(){
+  const rows=[...state.entries].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,40);
+  $('#view').innerHTML=`<div class='card'><h3>Verlauf</h3><p class='muted'>Letzte ${rows.length} Einträge</p>${rows.map(r=>`<div class='card'><b>${r.date} · ${r.sessionType}</b><div class='muted'>${Object.entries(r.payload).map(([k,v])=>`${k}: ${v}`).join(' · ')}</div></div>`).join('')||'Noch keine Daten.'}</div>`;
+}
+function line(canvasId,data,key,color){const c=document.getElementById(canvasId);const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);x.strokeStyle=color;x.lineWidth=2;const vals=data.map(d=>d[key]).filter(v=>typeof v==='number');if(!vals.length)return;const min=0,max=10;vals.forEach((v,i)=>{const px=(i/(Math.max(vals.length-1,1)))*(c.width-20)+10;const py=(1-(v-min)/(max-min))*(c.height-20)+10;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}
+function renderDashboard(){
+  const daily={};state.entries.forEach(e=>{daily[e.date]=daily[e.date]||{};daily[e.date][e.sessionType]=e.payload});
+  const ds=Object.keys(daily).sort().slice(-30).map(d=>({date:d,mood:daily[d].morgen?.moodScore??null,drive:daily[d].morgen?.driveScore??null,sleep:daily[d].morgen?.sleepScore??null,eat:daily[d].abend?.eatingScore??null}));
+  $('#view').innerHTML=`<div class='card'><h3>Dashboard</h3><p class='muted'>Einfacher Offline-Überblick (30 Tage)</p><div class='q'>Stimmung</div><canvas id='c1' width='640' height='160'></canvas><div class='q'>Antrieb</div><canvas id='c2' width='640' height='160'></canvas><div class='q'>Schlaf</div><canvas id='c3' width='640' height='160'></canvas><div class='q'>Essen</div><canvas id='c4' width='640' height='160'></canvas></div>`;
+  line('c1',ds,'mood','#22c55e'); line('c2',ds,'drive','#facc15'); line('c3',ds,'sleep','#60a5fa'); line('c4',ds,'eat','#fb923c');
+}
+function exportCsv(){
+  const head=['id','date','sessionType','createdAt','payload'];
+  const rows=state.entries.map(e=>[e.id,e.date,e.sessionType,e.createdAt,JSON.stringify(e.payload)]);
+  const csv=[head,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='wellness-export.csv'; a.click();
+}
+function seed(){
+  for(let i=0;i<20;i++){const d=new Date();d.setDate(d.getDate()-i);const date=d.toISOString().slice(0,10);state.entries.push({id:crypto.randomUUID(),date,sessionType:'morgen',createdAt:d.toISOString(),payload:{date,sleepScore:3+(i%7),driveScore:2+(i%8),moodScore:2+(i%9),wakeupEase:5}});state.entries.push({id:crypto.randomUUID(),date,sessionType:'abend',createdAt:d.toISOString(),payload:{date,dayScore:4+(i%6),sportDone:i%3===0,movementDone:i%2===0,reflectionDone:i%4===0,socialContact:i%3!==1,studyDone:i%2===0,eatingScore:4+(i%6),eatingBinge:i%9===0,screentimeUncontrolled:i%4===0}});} save(); render();
+}
+function renderTools(){
+  $('#view').innerHTML=`<div class='card'><h3>Tools</h3><div class='row'><button id='install' class='alt'>Als App installieren</button><button id='csv' class='good'>CSV exportieren</button><button id='seed' class='warn'>Beispieldaten erzeugen</button><button id='clear' class='bad'>Alle Daten löschen</button></div><p class='muted'>Daten liegen nur im Browser-Speicher dieses Geräts.</p><p class='muted'>Hinweis: Für echte PWA-Installation muss die Datei über http/https geöffnet werden (nicht direkt als file://).</p></div>`;
+  $('#csv').onclick=exportCsv; $('#seed').onclick=seed; $('#clear').onclick=()=>{if(confirm('Wirklich alles löschen?')){state.entries=[];save();render();}};
+  $('#install').onclick=async()=>{
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt=null;
+    } else {
+      alert('Install-Dialog aktuell nicht verfügbar. Öffne die App über http/https und nutze ggf. Browser-Menü -> Zum Startbildschirm hinzufügen.');
+    }
+  };
+}
+
+function render(){ if(tab==='checkin') renderCheckin(); else if(tab==='verlauf') renderVerlauf(); else if(tab==='dashboard') renderDashboard(); else renderTools(); document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); }
+window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredInstallPrompt=e;});
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
+render();
+</script>
+</body>
+</html>
