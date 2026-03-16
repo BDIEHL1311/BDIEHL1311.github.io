@@ -33,6 +33,7 @@ Perfekt, ist jetzt als **PWA-Variante** vorbereitet und um deine gewünschten Fe
 4. Installiere die App über Browser-Menü oder den Button in `Tools`.
 
 ## Reminder-Hinweis (wichtig)
+- Falls nach einem Deploy noch die alte Version sichtbar ist: einmal Seite neu laden oder Browserdaten für die Seite löschen (Service-Worker-Cache).
 Die App ist komplett serverlos/offline. Reminder werden daher browserseitig ausgelöst.
 - Funktioniert gut, wenn die App regelmäßig genutzt/geöffnet wird.
 - Ohne externen Push-Server gibt es je nach Browser/OS Grenzen für harte Hintergrund-Zustellung.
