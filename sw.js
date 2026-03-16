@@ -28,3 +28,12 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    const existing = windowClients.find((client) => client.url.includes(self.location.origin));
+    if (existing) return existing.focus();
+    return clients.openWindow('./');
+  }));
+});
