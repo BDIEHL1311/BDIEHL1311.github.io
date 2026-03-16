@@ -9,6 +9,11 @@ Perfekt, ist jetzt als **PWA-Variante** vorbereitet und um deine gewünschten Fe
   - Uhrzeit für Morgen und Abend frei konfigurierbar
   - Ein/Aus-Schalter für Reminder
   - Benachrichtigungsberechtigung direkt per Button anfragbar
+  - Test-Push direkt aus der App möglich
+- ✅ **Mini-Feedback nach jedem Eintrag**
+  - Sofortige kurze Rückmeldung (Morgen/Abend), zusätzlich zur großen Intervention
+- ✅ **Schnellwahl „Gestern“** im Datumsfeld
+  - Für nachträgliche Einträge ohne manuelles Tippen
 
 ## Was du bekommst
 - Läuft weiterhin als einfache lokale Datei (`index.html`)
@@ -28,6 +33,7 @@ Perfekt, ist jetzt als **PWA-Variante** vorbereitet und um deine gewünschten Fe
 4. Installiere die App über Browser-Menü oder den Button in `Tools`.
 
 ## Reminder-Hinweis (wichtig)
+- Falls nach einem Deploy noch die alte Version sichtbar ist: einmal Seite neu laden oder Browserdaten für die Seite löschen (Service-Worker-Cache).
 Die App ist komplett serverlos/offline. Reminder werden daher browserseitig ausgelöst.
 - Funktioniert gut, wenn die App regelmäßig genutzt/geöffnet wird.
 - Ohne externen Push-Server gibt es je nach Browser/OS Grenzen für harte Hintergrund-Zustellung.
@@ -43,6 +49,7 @@ Die App ist komplett serverlos/offline. Reminder werden daher browserseitig ausg
 - Manuelle Datumswahl pro Beitrag
 - Alarm-System (Gelb/Rot + Kombinationsalarm)
 - Interventionsvorschläge
+- Mini-Feedback pro Eintrag
 - Verlauf
 - Offline-Dashboard (Canvas)
 - CSV-Export

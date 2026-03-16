@@ -27,7 +27,7 @@
 </head>
 <body>
 <div class="app">
-  <div class="card"><h1>Wellness Tracker (Offline)</h1><div class="muted">Läuft komplett lokal im Browser deines Handys. Kein Server, kein Konto.</div></div>
+  <div class="card"><h1>Wellness Tracker (Offline)</h1><div class="muted">Läuft komplett lokal im Browser deines Handys. Kein Server, kein Konto.</div><div class="muted" id="appVersion">Version: v3</div></div>
   <div id="view"></div>
 </div>
 <div class="tabs">
@@ -39,6 +39,7 @@
 <script>
 const KEY='wellness_offline_v1';
 let deferredInstallPrompt = null;
+let serviceWorkerRegistration = null;
 const today = () => new Date().toISOString().slice(0,10);
 const defaultState = {
   entries: [],
@@ -90,6 +91,19 @@ function alarmEval(){
   return out;
 }
 
+function miniFeedbackFor(modeName,payload){
+  if(modeName==='morgen'){
+    if(typeof payload.sleepScore === 'number' && payload.sleepScore <= 4) return 'Heute langsam starten: 5 ruhige Minuten, Wasser trinken und erste Aufgabe sehr klein halten.';
+    if(typeof payload.moodScore === 'number' && payload.moodScore >= 8 && typeof payload.driveScore === 'number' && payload.driveScore >= 7) return 'Starker Morgen! Nutze das Momentum für die wichtigste Aufgabe zuerst.';
+    if(payload.bodyComplaints === true) return 'Körper sendet Signale: plane heute bewusst Pausen und reduziere den Druck.';
+    return 'Guter Start! Setze dir ein realistisches Ziel für den Vormittag.';
+  }
+  if(typeof payload.dayScore === 'number' && payload.dayScore <= 4) return 'Danke fürs Eintragen. Für heute reicht ein kleiner Abschluss: Bildschirm runterfahren und kurz durchatmen.';
+  if(payload.screentimeUncontrolled === true) return 'Für morgen: fixe Handy-Pause im Kalender setzen (z.B. 30 Minuten ohne Screen).';
+  if(payload.sportDone === true || payload.movementDone === true) return 'Top – Bewegung wirkt stabilisierend. Das war ein guter Baustein heute.';
+  return 'Tagesabschluss erledigt ✅ Nimm einen kleinen Erfolg mit in den Abend.';
+}
+
 const interventions=(level)=>{
   const base=['10 Minuten Spaziergang, jetzt. Schuhe an, Tür auf.','Trink ein Glas Wasser und iss etwas Einfaches mit Eiweiß.','Schick einer Person eine kurze Nachricht: "Kurzes Check-in von mir".'];
   return level==='rot'?base.concat(['Heute Abend 30 Minuten vor Schlaf kein Bildschirm.']):base;
@@ -100,7 +114,8 @@ function renderCheckin(){
   $('#view').innerHTML=`<div class='card'>
     <div class='row2'><button class='${mode==='morgen'?'good':'alt'}' id='m'>Morgen</button><button class='${mode==='abend'?'good':'alt'}' id='a'>Abend</button></div>
     <div class='q' style='margin-top:10px'>Datum für diesen Eintrag</div>
-    <input id='dateInput' type='date' value='${form.date || today()}' />
+    <div class='row2'><input id='dateInput' type='date' max='${today()}' value='${form.date || today()}' /><button id='yesterday' class='alt'>Gestern wählen</button></div>
+    <p class='muted'>Damit kannst du auch nachträglich Einträge für Vortage erfassen.</p>
     <p class='muted'>Karte ${step+1}/${qs[mode].length}</p>
     <div class='q'>${label}</div>
     ${type==='text'?`<textarea id='inp' rows='3'>${v||''}</textarea>`:`<input id='inp' ${type==='number'?'type="number" min="1" max="10"':'type="text" placeholder="ja/nein"'} value='${v===null?'':v}' />`}
@@ -109,6 +124,13 @@ function renderCheckin(){
 
   const keepDate = () => { form.date = $('#dateInput').value || today(); };
   $('#dateInput').onchange = keepDate;
+  $('#yesterday').onclick=()=>{
+    const d = new Date();
+    d.setDate(d.getDate()-1);
+    const y = d.toISOString().slice(0,10);
+    $('#dateInput').value = y;
+    keepDate();
+  };
   $('#m').onclick=()=>{keepDate(); mode='morgen';step=0;render();};
   $('#a').onclick=()=>{keepDate(); mode='abend';step=0;render();};
   $('#prev').onclick=()=>{keepDate(); form[key]=val($('#inp').value,type); if(step>0)step--; render();};
@@ -116,12 +138,17 @@ function renderCheckin(){
     keepDate();
     form[key]=val($('#inp').value,type);
     if(step<qs[mode].length-1){step++;render();return;}
-    state.entries.push({id:crypto.randomUUID(),date:form.date,sessionType:mode,createdAt:new Date().toISOString(),payload:{...form}});
+    const payload={...form};
+    const selectedDate = form.date || today();
+    state.entries.push({id:crypto.randomUUID(),date:selectedDate,sessionType:mode,createdAt:new Date().toISOString(),payload});
     save();
+    const miniFeedback = miniFeedbackFor(mode,payload);
     const alarms=alarmEval();
     const alarmHtml=alarms.map(a=>`<div class='card'><span class='pill ${a.level==='rot'?'p-b':'p-w'}'>${a.level==='rot'?'🔴 Rot':'🟡 Gelb'}</span><p>${a.msg}</p><ul>${interventions(a.level).slice(0,3).map(i=>`<li>${i}</li>`).join('')}</ul></div>`).join('');
-    form={date: form.date || today()}; step=0;
-    $('#view').innerHTML=`<div class='card'><h3>Gespeichert ✅</h3><p class='muted'>Eintrag für <b>${form.date}</b> lokal gespeichert.</p></div>${alarmHtml||"<div class='card'>Kein Alarm aktiv.</div>"}`;
+    form={date: selectedDate}; step=0;
+    $('#view').innerHTML=`<div class='card'><h3>Gespeichert ✅</h3><p class='muted'>Eintrag für <b>${selectedDate}</b> lokal gespeichert.</p></div>
+      <div class='card'><h3>Mini-Feedback</h3><p>${miniFeedback}</p></div>
+      ${alarmHtml||"<div class='card'>Kein großer Alarm aktiv.</div>"}`;
   };
 }
 
@@ -159,20 +186,35 @@ function seed(){
   save(); render();
 }
 
-function maybeSendReminder(){
+async function sendNotification(title, body){
+  if (!('Notification' in window)) {
+    alert(`${title}\n${body}`);
+    return;
+  }
+  if (Notification.permission !== 'granted') {
+    alert(`${title}\n${body}`);
+    return;
+  }
+  if (serviceWorkerRegistration) {
+    await serviceWorkerRegistration.showNotification(title, { body, tag: `wellness-${title}` });
+    return;
+  }
+  new Notification(title,{body});
+}
+
+async function maybeSendReminder(){
   if(!state.reminder.enabled) return;
   const now = new Date();
   const current = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   const date = now.toISOString().slice(0,10);
-  const send = (slot,title,body)=>{
+  const send = async (slot,title,body)=>{
     if (state.reminderLastSent[slot] === date) return;
-    if (Notification.permission === 'granted') new Notification(title,{body});
-    else alert(`${title}\n${body}`);
+    await sendNotification(title,body);
     state.reminderLastSent[slot] = date;
     save();
   };
-  if (current === state.reminder.morning) send('morning','Guten Morgen 🌅','Zeit für deinen Morgen-Check-in.');
-  if (current === state.reminder.evening) send('evening','Guten Abend 🌙','Zeit für deinen Abend-Check-in.');
+  if (current === state.reminder.morning) await send('morning','Guten Morgen 🌅','Zeit für deinen Morgen-Check-in.');
+  if (current === state.reminder.evening) await send('evening','Guten Abend 🌙','Zeit für deinen Abend-Check-in.');
 }
 
 function renderTools(){
@@ -187,10 +229,11 @@ function renderTools(){
       <div><label class='muted'>Morgens</label><input id='remMorning' type='time' value='${state.reminder.morning}' /></div>
       <div><label class='muted'>Abends</label><input id='remEvening' type='time' value='${state.reminder.evening}' /></div>
     </div>
-    <div class='row'><button id='saveReminder' class='good'>Reminder speichern</button></div>
+    <div class='row2'><button id='saveReminder' class='good'>Reminder speichern</button><button id='testReminder' class='alt'>Test-Push senden</button></div>
     <div class='row' style='margin-top:8px'><button id='csv' class='good'>CSV exportieren</button><button id='seed' class='warn'>Beispieldaten erzeugen</button><button id='clear' class='bad'>Alle Daten löschen</button></div>
-    <p class='muted'>Daten liegen nur im Browser-Speicher dieses Geräts. Für echte PWA-Installation via http/https öffnen.</p>
-    <p class='muted'>Hinweis: Browser-Reminder funktionieren zuverlässig, wenn die App regelmäßig geöffnet wird (ohne Server/Push-Dienst).</p>
+    <p class='muted'>Daten liegen nur im Browser-Speicher dieses Geräts. Für echte PWA-Installation via https öffnen.</p>
+    <p class='muted'>Install auf Handy: GitHub Pages URL öffnen → Browser-Menü → „Zum Startbildschirm hinzufügen“.</p>
+    <p class='muted'>Hinweis: Ohne Server bleibt Reminder lokal. Zuverlässig, wenn die App regelmäßig geöffnet wird.</p>
   </div>`;
 
   $('#csv').onclick=exportCsv;
@@ -204,13 +247,14 @@ function renderTools(){
     save();
     alert('Reminder gespeichert ✅');
   };
+  $('#testReminder').onclick=async()=>{ await sendNotification('Test-Push ✅','Dein Reminder ist aktiv und bereit.'); };
   $('#install').onclick=async()=>{
     if(deferredInstallPrompt){
       deferredInstallPrompt.prompt();
       await deferredInstallPrompt.userChoice;
       deferredInstallPrompt=null;
     } else {
-      alert('Install-Dialog aktuell nicht verfügbar. Öffne die App über http/https und nutze Browser-Menü -> Zum Startbildschirm hinzufügen.');
+      alert('Install-Dialog aktuell nicht verfügbar. Öffne die App über HTTPS (z.B. GitHub Pages) und nutze Browser-Menü -> Zum Startbildschirm hinzufügen.');
     }
   };
 }
@@ -224,8 +268,21 @@ function render(){
 }
 
 window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredInstallPrompt=e;});
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(()=>{});
-setInterval(maybeSendReminder, 30000);
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').then((reg)=>{
+    serviceWorkerRegistration=reg;
+    reg.addEventListener('updatefound', ()=>{
+      const newWorker = reg.installing;
+      if(!newWorker) return;
+      newWorker.addEventListener('statechange', ()=>{
+        if(newWorker.state==='installed' && navigator.serviceWorker.controller){
+          alert('Neue App-Version verfügbar. Bitte Seite einmal neu laden.');
+        }
+      });
+    });
+  }).catch(()=>{});
+}
+setInterval(()=>{maybeSendReminder();}, 30000);
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) maybeSendReminder(); });
 maybeSendReminder();
 

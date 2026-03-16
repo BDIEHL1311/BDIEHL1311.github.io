@@ -1,4 +1,4 @@
-const CACHE = 'wellness-offline-v2';
+const CACHE = 'wellness-offline-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -15,6 +15,21 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  const isNavigation = event.request.mode === 'navigate';
+  if (isNavigation) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(async () => (await caches.match(event.request)) || caches.match('./index.html')),
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
@@ -27,4 +42,13 @@ self.addEventListener('fetch', (event) => {
         .catch(() => caches.match('./index.html'));
     }),
   );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    const existing = windowClients.find((client) => client.url.includes(self.location.origin));
+    if (existing) return existing.focus();
+    return clients.openWindow('./');
+  }));
 });
